@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "BADR_SUPPORT",
+    "slug": "badr-support",
+    "version": "1.0.0",
+    "orientation": "default",
+    "scheme": "badrsupport",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-document-picker",
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "BADR_SUPPORT",
+      "shortName": "BADR"
+    },
+    "android": {
+      "package": "com.badrsupport.app"
+    }
+  }
+}
