@@ -11,7 +11,9 @@
       "expo-router",
       "expo-document-picker",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": false

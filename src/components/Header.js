@@ -3,11 +3,18 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import SvgIcon from './SvgIcon';
 import { router } from 'expo-router';
 import useTheme from '../hooks/useTheme';
+import useChat from '../hooks/useChat';
 
 const signatureLogo = require('../../assets/images/logo-signature.png');
 
 export default function Header({ title, subtitle, compact = false }) {
   const { colors } = useTheme();
+  const { authenticatedUser } = useChat();
+  const profileName = authenticatedUser?.user_metadata?.full_name?.trim()
+    || authenticatedUser?.user_metadata?.name?.trim()
+    || authenticatedUser?.email?.split('@')[0]?.trim()
+    || '';
+  const avatarInitial = (profileName || 'Guest').slice(0, 1).toUpperCase();
   return (
     <View style={[styles.header, { borderBottomColor: colors.borderSubtle }]}>
       <View style={styles.heading}>
@@ -32,7 +39,7 @@ export default function Header({ title, subtitle, compact = false }) {
           onPress={() => router.push('/profile')}
           style={({ pressed }) => [styles.avatarButton, { backgroundColor: colors.primaryDim, opacity: pressed ? 0.72 : 1 }]}
         >
-          <Text style={[styles.initials, { color: colors.primary }]}>G</Text>
+          <Text style={[styles.initials, { color: colors.primary }]}>{avatarInitial}</Text>
         </Pressable>
       </View>
     </View>

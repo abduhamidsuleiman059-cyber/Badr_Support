@@ -10,7 +10,7 @@ import useTheme from '../hooks/useTheme';
 const highlights = [
   { icon: 'message-circle', title: 'A calmer conversation', body: 'A clear, thoughtful space for your questions and ideas.' },
   { icon: 'layers', title: 'Room to explore', body: 'Move from first thought to a plan, one step at a time.' },
-  { icon: 'shield', title: 'Built with care', body: 'No account or AI service is connected in this preview.' },
+  { icon: 'shield', title: 'Built with care', body: 'Sign in to save conversations securely to your account.' },
 ];
 
 export default function OnboardingScreen() {
@@ -44,7 +44,7 @@ export default function OnboardingScreen() {
               <AppButton title="Uliza Badr Sasa" icon="arrow-right" onPress={() => router.push('/auth')} />
               <AppButton title="Jaribu Bila Akaunti" variant="outline" onPress={() => router.replace('/')} />
             </View>
-            <Text style={[styles.smallNote, { color: colors.textMuted }]}>Preview only · Sign-in and AI services are not connected</Text>
+            <Text style={[styles.smallNote, { color: colors.textMuted }]}>Sign in to save chat history. Guest chats are temporary.</Text>
           </View>
           <LinearGradient colors={['#173E32', '#122821', '#10191D']} style={[styles.visual, !wide && styles.visualNarrow]}>
             <View style={styles.visualOrb}><AIAvatar size={86} /></View>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import SvgIcon from '../components/SvgIcon';
 import AppShell from '../components/AppShell';
 import AIAvatar from '../components/AIAvatar';
@@ -9,6 +10,14 @@ import PageContainer from '../components/PageContainer';
 import TypingIndicator from '../components/TypingIndicator';
 import useTheme from '../hooks/useTheme';
 import useChat from '../hooks/useChat';
+import { sendPrompt } from '../services/aiService';
+import { canApplyAuthResult } from '../context/chatIdentityState';
+import {
+  canRetryIncompleteExchange,
+  getChatPersistenceNotice,
+  getGenerationFailurePersistenceNotice,
+} from '../services/chatPersistenceStatus';
+import { createChatRetry, createChatSubmission } from '../services/chatSubmission';
 
 const starterPrompts = [
   { icon: 'edit-3', title: 'Help me write', prompt: 'Help me get started with a piece of writing.' },
@@ -18,33 +27,177 @@ const starterPrompts = [
 
 export default function ChatScreen() {
   const { colors } = useTheme();
-  const { activeThread, addUserMessage, startChat } = useChat();
+  const { prompt: routedPrompt, promptKey } = useLocalSearchParams();
+  const {
+    activeThread,
+    addUserMessage,
+    addAssistantMessage,
+    updateConversationId,
+    startChat,
+    isAuthenticated,
+    authenticatedUserId,
+    authGeneration,
+    authLoading,
+    historyLoading,
+    loadingConversationId,
+    historyError,
+    refreshHistory,
+    retryLoadConversation,
+    openThread,
+  } = useChat();
   const [notice, setNotice] = useState('');
+  const [requestError, setRequestError] = useState('');
+  const [retryRequest, setRetryRequest] = useState(null);
+  const [isSending, setIsSending] = useState(false);
   const [previewTyping, setPreviewTyping] = useState(false);
   const scrollRef = useRef(null);
+  const handledPromptKey = useRef(null);
+  const priorAuthGeneration = useRef(authGeneration);
   const messages = activeThread ? activeThread.messages : [];
 
   useEffect(() => {
-    if (messages.length) scrollRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length]);
+    if (priorAuthGeneration.current === authGeneration) return;
+    priorAuthGeneration.current = authGeneration;
+    setNotice('');
+    setRequestError('');
+    setRetryRequest(null);
+  }, [authGeneration]);
 
-  function send(text, attachment) {
-    const content = text || `Attached “${attachment.name}” (local preview only).`;
-    addUserMessage(content, attachment && attachment.name);
-    setNotice('Your message is shown in this local preview only. AI responses are not connected.');
+  useEffect(() => {
+    if (messages.length) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [messages.length, isSending]);
+
+  useEffect(() => {
+    const prompt = Array.isArray(routedPrompt) ? routedPrompt[0] : routedPrompt;
+    const key = Array.isArray(promptKey) ? promptKey[0] : promptKey;
+
+    if (!prompt || handledPromptKey.current === key) return;
+    handledPromptKey.current = key;
+    router.setParams({ prompt: undefined, promptKey: undefined });
+    send(prompt, null);
+  }, [routedPrompt, promptKey]);
+
+  useEffect(() => {
+    if (activeThread?.conversationId && !activeThread.messagesLoaded
+      && loadingConversationId !== activeThread.id) {
+      openThread(activeThread.id);
+    }
+  }, [activeThread, loadingConversationId, openThread]);
+
+  async function submitMessage(request) {
+    setIsSending(true);
+    setRequestError('');
+
+    try {
+      const response = await sendPrompt(
+        request.content,
+        request.conversationId,
+        request.submissionId,
+      );
+      if (!canApplyAuthResult(
+        request.ownerUserId,
+        request.authGeneration,
+        authenticatedUserId,
+        authGeneration,
+      )) return false;
+
+      if (response.conversationId) {
+        updateConversationId(request.threadId, response.conversationId);
+      }
+      addAssistantMessage(request.threadId, response.reply, request.submissionId);
+
+      const persistenceNotice = getChatPersistenceNotice(response.persistence, isAuthenticated);
+      setNotice(request.attachmentNotice
+        ? `Only text was sent; the attachment was not uploaded. ${persistenceNotice}`
+        : persistenceNotice);
+      if (canRetryIncompleteExchange(response.persistence, isAuthenticated)) {
+        setRequestError('This exchange is not fully saved. Retry the exchange to try again.');
+        setRetryRequest(request);
+      } else {
+        setRequestError('');
+        setRetryRequest(null);
+      }
+      return true;
+    } catch (error) {
+      if (!canApplyAuthResult(
+        request.ownerUserId,
+        request.authGeneration,
+        authenticatedUserId,
+        authGeneration,
+      )) return false;
+
+      if (error.conversationId) {
+        updateConversationId(request.threadId, error.conversationId);
+      }
+      setNotice(getGenerationFailurePersistenceNotice(error.persistence));
+      setRequestError(error.message || 'Unable to send your message.');
+      setRetryRequest(createChatRetry(request, error));
+      return true;
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function send(text, attachment) {
+    const content = text.trim();
+    if (!content) {
+      setRequestError(attachment
+        ? 'Attachments are not uploaded. Add a text message to send.'
+        : 'Enter a message to send.');
+      return false;
+    }
+
+    const threadId = addUserMessage(content);
+    if (!threadId) return false;
+
+    if (attachment) {
+      setNotice('The selected attachment was not uploaded; only your text was sent.');
+    } else {
+      setNotice('');
+    }
+
+    setRetryRequest(null);
+    return submitMessage(createChatSubmission({
+      threadId,
+      conversationId: activeThread?.conversationId || null,
+      content,
+      ownerUserId: authenticatedUserId,
+      authGeneration,
+      attachmentNotice: Boolean(attachment),
+    }));
   }
 
   function choosePrompt(prompt) {
-    startChat(prompt);
-    setNotice('This prompt is displayed locally. Connect an AI service to receive responses.');
+    send(prompt, null);
   }
+
+  const loadingCurrentConversation = Boolean(
+    activeThread && loadingConversationId === activeThread.id,
+  );
+  const loadingHistoryWithoutThread = (authLoading || historyLoading) && !activeThread;
 
   return (
     <AppShell title={activeThread ? activeThread.title : 'New conversation'} subtitle="Your private space to think out loud">
       <PageContainer scroll={false} contentStyle={styles.containerPadding} style={styles.chatFrame}>
         <View style={styles.chatFrame}>
           <View style={styles.messageList}>
-            {messages.length === 0 ? (
+            {loadingHistoryWithoutThread || loadingCurrentConversation ? (
+              <View style={styles.statusState}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.statusText, { color: colors.textMuted }]}>Loading your conversation…</Text>
+              </View>
+            ) : historyError && (!activeThread || !activeThread.messagesLoaded) ? (
+              <View style={styles.statusState}>
+                <Text accessibilityRole="alert" style={[styles.statusText, { color: colors.danger }]}>{historyError}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => (activeThread ? retryLoadConversation() : refreshHistory())}
+                  style={styles.statusAction}
+                >
+                  <Text style={[styles.statusActionText, { color: colors.primary }]}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : messages.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={[styles.orbit, { borderColor: colors.primary + '24' }]}>
                   <View style={[styles.orbitInner, { borderColor: colors.primary + '36' }]} />
@@ -68,7 +221,11 @@ export default function ChatScreen() {
                 </View>
                 <View style={[styles.offlineNotice, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
                   <SvgIcon name="info" size={14} color={colors.cyan} />
-                  <Text style={[styles.offlineText, { color: colors.textMuted }]}>Frontend preview. Your messages stay in this session; no AI request is sent.</Text>
+                  <Text style={[styles.offlineText, { color: colors.textMuted }]}>
+                    {isAuthenticated
+                      ? 'Your signed-in conversations are saved to your account.'
+                      : 'Guest chats are not saved. Sign in to keep conversation history.'}
+                  </Text>
                 </View>
                 <View style={styles.animationPreview}>
                   <Pressable accessibilityRole="button" onPress={() => setPreviewTyping((visible) => !visible)} style={styles.previewToggle}>
@@ -92,21 +249,62 @@ export default function ChatScreen() {
                 keyboardShouldPersistTaps="handled"
               >
                 {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
+                {isSending ? <TypingIndicator label="BADR AI is responding" /> : null}
                 <View style={[styles.localNote, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
                   <SvgIcon name="info" size={13} color={colors.cyan} />
-                  <Text style={[styles.localNoteText, { color: colors.textMuted }]}>{notice || 'Local preview only · No AI response has been generated.'}</Text>
+                  <Text style={[styles.localNoteText, { color: colors.textMuted }]}>
+                    {notice || (isAuthenticated
+                      ? 'Messages in this conversation are synced to your account.'
+                      : 'Guest conversations are temporary and are not saved.')}
+                  </Text>
                 </View>
               </ScrollView>
             )}
           </View>
           <View style={styles.composerArea}>
+            {requestError ? (
+              <View style={[styles.requestError, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
+                <Text accessibilityRole="alert" style={[styles.requestErrorText, { color: colors.danger }]}>{requestError}</Text>
+                {retryRequest ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isSending}
+                    onPress={() => submitMessage(retryRequest)}
+                    style={({ pressed }) => [styles.retryButton, { opacity: isSending || pressed ? 0.6 : 1 }]}
+                  >
+                    <Text style={[styles.statusActionText, { color: colors.primary }]}>Retry exchange</Text>
+                  </Pressable>
+                ) : null}
+                {!isAuthenticated ? (
+                  <Pressable accessibilityRole="link" onPress={() => router.push('/auth')} style={styles.retryButton}>
+                    <Text style={[styles.statusActionText, { color: colors.primary }]}>Sign in to save history</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             {messages.length > 0 ? (
-              <Pressable accessibilityRole="button" onPress={() => { startChat(); setNotice(''); }} style={styles.newChat}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={isSending}
+                onPress={() => {
+                  startChat();
+                  setNotice('');
+                  setRequestError('');
+                  setRetryRequest(null);
+                }}
+                style={styles.newChat}
+              >
                 <SvgIcon name="plus" size={14} color={colors.primary} />
                 <Text style={[styles.newChatLabel, { color: colors.primary }]}>Start a new chat</Text>
               </Pressable>
             ) : null}
-            <MessageInput onSend={send} />
+            <MessageInput
+              onSend={send}
+              disabled={isSending
+                || loadingCurrentConversation
+                || loadingHistoryWithoutThread
+                || Boolean(historyError && activeThread?.conversationId && !activeThread.messagesLoaded)}
+            />
           </View>
         </View>
       </PageContainer>
@@ -118,6 +316,10 @@ const styles = StyleSheet.create({
   containerPadding: { flex: 1, paddingTop: 16, paddingBottom: 14 },
   chatFrame: { flex: 1, width: '100%', minHeight: 0, justifyContent: 'space-between' },
   messageList: { flex: 1, minHeight: 0 },
+  statusState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
+  statusText: { maxWidth: 420, fontSize: 11, lineHeight: 17, textAlign: 'center' },
+  statusAction: { padding: 8 },
+  statusActionText: { fontSize: 10, fontWeight: '800' },
   scroll: { flex: 1 },
   messages: { flexGrow: 1, gap: 16, paddingVertical: 8, justifyContent: 'flex-end' },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 18 },
@@ -138,6 +340,9 @@ const styles = StyleSheet.create({
   localNote: { maxWidth: 520, borderWidth: 1, borderRadius: 10, padding: 9, flexDirection: 'row', alignItems: 'center', gap: 8 },
   localNoteText: { flex: 1, fontSize: 9, lineHeight: 14 },
   composerArea: { width: '100%', maxWidth: 780, alignSelf: 'center', paddingTop: 12 },
+  requestError: { borderWidth: 1, borderRadius: 11, padding: 10, gap: 6 },
+  requestErrorText: { fontSize: 10, lineHeight: 15 },
+  retryButton: { alignSelf: 'flex-start', paddingVertical: 5, paddingRight: 8 },
   newChat: { alignSelf: 'center', flexDirection: 'row', gap: 6, alignItems: 'center', padding: 8 },
   newChatLabel: { fontSize: 10, fontWeight: '700' },
 });

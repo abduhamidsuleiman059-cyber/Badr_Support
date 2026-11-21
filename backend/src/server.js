@@ -7,6 +7,7 @@ const { HttpError, errorHandler } = require('./middleware/errorHandler');
 const app = express();
 
 app.use(cors({
+  exposedHeaders: ['X-Conversation-Id'],
   origin(origin, callback) {
     if (!origin || config.corsOrigins.includes(origin)) {
       return callback(null, true);

@@ -17,6 +17,9 @@ const corsOrigins = (process.env.CORS_ORIGINS || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
+
 const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || '';
 const geminiModel = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite';
 const geminiTimeoutMs = Number(process.env.GEMINI_TIMEOUT_MS || 30000);
@@ -60,6 +63,8 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port,
   corsOrigins,
+  supabaseUrl,
+  supabaseServiceRoleKey,
   aiProvider,
   geminiApiKey,
   geminiModel,

@@ -29,9 +29,10 @@ export default function MessageInput({ onSend, disabled = false, onAttachment })
     }
   }
 
-  function submit() {
+  async function submit() {
     if (!text.trim() && !attachment) return;
-    onSend(text.trim(), attachment);
+    const shouldClear = await onSend(text.trim(), attachment);
+    if (shouldClear === false) return;
     setText('');
     setAttachment(null);
   }
@@ -69,7 +70,7 @@ export default function MessageInput({ onSend, disabled = false, onAttachment })
           style={[styles.input, Platform.OS === 'web' && styles.webInput, { color: colors.text }]}
         />
         <View style={styles.actions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" onPress={pickFile} disabled={picking}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Attach a file" onPress={pickFile} disabled={picking || disabled}>
             {picking ? <ActivityIndicator size="small" color={colors.primary} /> : <SvgIcon name="paperclip" size={17} color={colors.textMuted} />}
           </Pressable>
           <Pressable
@@ -97,7 +98,7 @@ export default function MessageInput({ onSend, disabled = false, onAttachment })
       </View>
       <Text style={[styles.hint, { color: colors.textMuted }]}>
         {voiceDemo ? 'Voice capture is not connected yet. ' : ''}
-        UI preview only · AI responses are not connected
+        Text messages only · Attachments are not uploaded
       </Text>
     </View>
   );

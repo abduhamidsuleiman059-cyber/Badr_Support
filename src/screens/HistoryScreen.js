@@ -9,12 +9,23 @@ import { formatRelativeDate } from '../utils/formatDate';
 
 export default function HistoryScreen() {
   const { colors } = useTheme();
-  const { threads, openThread, togglePinThread, deleteThread } = useChat();
+  const {
+    threads,
+    openThread,
+    togglePinThread,
+    deleteThread,
+    authLoading,
+    historyLoading,
+    historyError,
+    refreshHistory,
+    isAuthenticated,
+  } = useChat();
   const { width } = useWindowDimensions();
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [feedback, setFeedback] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const filtered = useMemo(() => threads.filter((thread) => thread.title.toLowerCase().includes(query.trim().toLowerCase())), [threads, query]);
   const pinnedThreads = filtered.filter((thread) => thread.pinned);
   const otherThreads = filtered.filter((thread) => !thread.pinned);
@@ -35,10 +46,10 @@ export default function HistoryScreen() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [closeHistory, pendingDelete]);
 
-  function selectThread(threadId) {
-    openThread(threadId);
-    if (router.canGoBack()) router.back();
-    else router.replace('/chat');
+  async function selectThread(threadId) {
+    const loaded = await openThread(threadId);
+    if (!loaded) return;
+    router.replace('/chat');
   }
 
   function handleTogglePin(thread) {
@@ -46,14 +57,25 @@ export default function HistoryScreen() {
     setFeedback(thread.pinned ? 'Conversation unpinned.' : 'Conversation pinned.');
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!pendingDelete) return;
-    deleteThread(pendingDelete.id);
-    setFeedback('Conversation deleted.');
-    setPendingDelete(null);
+    setDeleting(true);
+    try {
+      await deleteThread(pendingDelete.id);
+      setFeedback('Conversation deleted.');
+      setPendingDelete(null);
+    } catch (error) {
+      setFeedback(error.message || 'Unable to delete this conversation.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function renderThread(thread) {
+    const messageCount = thread.messagesLoaded
+      ? `${thread.messages.length} ${thread.messages.length === 1 ? 'message' : 'messages'}`
+      : 'Saved conversation';
+
     return (
       <View key={thread.id} style={[styles.thread, { borderTopColor: colors.borderSubtle }]}>
         <Pressable
@@ -76,7 +98,7 @@ export default function HistoryScreen() {
               ) : null}
             </View>
             <Text style={[styles.threadMeta, { color: colors.textMuted }]}>
-              {thread.messages.length} {thread.messages.length === 1 ? 'message' : 'messages'} · {formatRelativeDate(thread.updatedAt)}
+              {messageCount} · {formatRelativeDate(thread.updatedAt)}
             </Text>
           </View>
         </Pressable>
@@ -94,6 +116,7 @@ export default function HistoryScreen() {
             accessibilityRole="button"
             accessibilityLabel={`Delete conversation ${thread.title}`}
             onPress={() => { setFeedback(''); setPendingDelete(thread); }}
+            disabled={deleting}
             style={({ pressed }) => [styles.actionLabel, { opacity: pressed ? 0.65 : 1 }]}
           >
             <Text style={[styles.actionText, { color: colors.danger }]}>Delete</Text>
@@ -152,11 +175,34 @@ export default function HistoryScreen() {
               ) : null}
             </View>
             {feedback ? <Text accessibilityLiveRegion="polite" style={[styles.feedback, { color: colors.primary }]}>{feedback}</Text> : null}
-            {threads.length === 0 ? (
+            {historyError ? (
+              <View style={styles.historyStatus}>
+                <Text accessibilityRole="alert" style={[styles.historyError, { color: colors.danger }]}>{historyError}</Text>
+                <Pressable accessibilityRole="button" onPress={refreshHistory} style={styles.retryHistory}>
+                  <Text style={[styles.actionText, { color: colors.primary }]}>Retry loading history</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {(authLoading || historyLoading) && threads.length === 0 ? (
+              <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                  {authLoading ? 'Restoring your account session…' : 'Loading saved conversations…'}
+                </Text>
+              </View>
+            ) : threads.length === 0 && !isAuthenticated ? (
+              <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.emptyIcon, { backgroundColor: colors.primaryDim }]}><SvgIcon name="clock" size={22} color={colors.primary} /></View>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Sign in to view saved history</Text>
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>Guest conversations are temporary. Sign in to save and retrieve conversations.</Text>
+                <Pressable accessibilityRole="link" onPress={() => router.push('/auth')} style={styles.retryHistory}>
+                  <Text style={[styles.actionText, { color: colors.primary }]}>Sign in</Text>
+                </Pressable>
+              </View>
+            ) : threads.length === 0 ? (
               <View style={[styles.empty, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={[styles.emptyIcon, { backgroundColor: colors.primaryDim }]}><SvgIcon name="clock" size={22} color={colors.primary} /></View>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>A clean slate</Text>
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>Conversations you start will appear here. Your history stays in this app session.</Text>
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>Conversations you save will appear here.</Text>
               </View>
             ) : filtered.length === 0 ? (
               <View style={styles.noResults}>
@@ -179,7 +225,7 @@ export default function HistoryScreen() {
                 ) : null}
               </ScrollView>
             )}
-            <Text style={[styles.note, { color: colors.textMuted }]}>Local preview only · Conversations aren't synced or sent to a service.</Text>
+            <Text style={[styles.note, { color: colors.textMuted }]}>Saved conversations sync to your account. Pins are local to this session.</Text>
           </View>
         </SafeAreaView>
       </View>
@@ -195,11 +241,14 @@ export default function HistoryScreen() {
             <View style={[styles.dialogIcon, { backgroundColor: colors.danger + '18' }]}><SvgIcon name="trash" size={19} color={colors.danger} /></View>
             <Text style={[styles.dialogTitle, { color: colors.text }]}>Delete conversation?</Text>
             <Text style={[styles.dialogBody, { color: colors.textSecondary }]}>
-              “{pendingDelete ? pendingDelete.title : ''}” will be removed from this session. This can't be undone.
+              {pendingDelete?.conversationId
+                ? `“${pendingDelete.title}” and its messages will be deleted from your account. This can't be undone.`
+                : `“${pendingDelete ? pendingDelete.title : ''}” will be removed from this session.`}
             </Text>
             <View style={styles.dialogActions}>
               <Pressable
                 accessibilityRole="button"
+                disabled={deleting}
                 onPress={() => setPendingDelete(null)}
                 style={({ pressed }) => [styles.dialogButton, { backgroundColor: colors.surfaceRaised, borderColor: colors.border, opacity: pressed ? 0.72 : 1 }]}
               >
@@ -207,10 +256,11 @@ export default function HistoryScreen() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                disabled={deleting}
                 onPress={confirmDelete}
-                style={({ pressed }) => [styles.dialogButton, { backgroundColor: colors.danger, borderColor: colors.danger, opacity: pressed ? 0.78 : 1 }]}
+                style={({ pressed }) => [styles.dialogButton, { backgroundColor: colors.danger, borderColor: colors.danger, opacity: deleting || pressed ? 0.78 : 1 }]}
               >
-                <Text style={[styles.dialogButtonText, styles.deleteText]}>Delete conversation</Text>
+                <Text style={[styles.dialogButtonText, styles.deleteText]}>{deleting ? 'Deleting…' : 'Delete conversation'}</Text>
               </Pressable>
             </View>
           </View>
@@ -235,6 +285,9 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, minWidth: 0, fontSize: 12 },
   webInput: { outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent', borderWidth: 0, backgroundColor: 'transparent', boxShadow: 'none' },
   feedback: { fontSize: 10, fontWeight: '700', marginTop: 11 },
+  historyStatus: { marginTop: 12, gap: 5 },
+  historyError: { fontSize: 10, lineHeight: 15 },
+  retryHistory: { alignSelf: 'flex-start', paddingVertical: 6, paddingRight: 8 },
   empty: { flex: 1, minHeight: 250, borderWidth: 1, borderRadius: 20, alignItems: 'center', justifyContent: 'center', padding: 26, marginTop: 18 },
   emptyIcon: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 17, fontWeight: '800', marginTop: 16 },

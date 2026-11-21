@@ -23,7 +23,12 @@ function errorHandler(error, req, res, next) {
     console.error(error);
   }
 
-  return res.status(statusCode).json({ error: { message } });
+  const response = { error: { message } };
+  if (error.persistence && typeof error.persistence === 'object') {
+    response.persistence = error.persistence;
+  }
+
+  return res.status(statusCode).json(response);
 }
 
 module.exports = { HttpError, errorHandler };

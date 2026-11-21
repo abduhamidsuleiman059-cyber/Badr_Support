@@ -4,6 +4,9 @@ import SvgIcon from '../components/SvgIcon';
 import AppShell from '../components/AppShell';
 import PageContainer from '../components/PageContainer';
 import useTheme from '../hooks/useTheme';
+import useChat from '../hooks/useChat';
+import { isBackendConfigured } from '../services/apiClient';
+import { isSupabaseConfigured } from '../services/supabaseClient';
 
 function SettingRow({ icon, title, description, colors, action }) {
   return (
@@ -20,8 +23,11 @@ function SettingRow({ icon, title, description, colors, action }) {
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
+  const { isAuthenticated } = useChat();
   const [themeMenu, setThemeMenu] = useState(false);
   const [info, setInfo] = useState(null);
+  const backendConfigured = isBackendConfigured();
+  const authConfigured = isSupabaseConfigured();
   return (
     <AppShell title="Settings" subtitle="Make your workspace feel like yours">
       <PageContainer>
@@ -76,21 +82,21 @@ export default function SettingsScreen() {
             <SettingRow
               icon="message-circle"
               title="AI responses"
-              description="No AI provider or API credentials are configured."
+              description={backendConfigured ? 'Chat requests use the configured backend and provider routing.' : 'Set EXPO_PUBLIC_BACKEND_API_URL to connect the chat backend.'}
               colors={colors}
-              action={<View style={[styles.status, { backgroundColor: colors.surfaceRaised }]}><View style={[styles.statusDot, { backgroundColor: colors.textMuted }]} /><Text style={[styles.statusText, { color: colors.textMuted }]}>Not connected</Text></View>}
+              action={<View style={[styles.status, { backgroundColor: colors.surfaceRaised }]}><View style={[styles.statusDot, { backgroundColor: backendConfigured ? colors.primary : colors.textMuted }]} /><Text style={[styles.statusText, { color: backendConfigured ? colors.primary : colors.textMuted }]}>{backendConfigured ? 'Configured' : 'Not connected'}</Text></View>}
             />
             <SettingRow
               icon="user"
               title="Authentication"
-              description="Sign-in screens are ready for a real auth service."
+              description={authConfigured ? 'Email and password sign-in use Supabase Auth.' : 'Set the public Supabase URL and publishable key to enable sign-in.'}
               colors={colors}
-              action={<View style={[styles.status, { backgroundColor: colors.surfaceRaised }]}><View style={[styles.statusDot, { backgroundColor: colors.textMuted }]} /><Text style={[styles.statusText, { color: colors.textMuted }]}>Not connected</Text></View>}
+              action={<View style={[styles.status, { backgroundColor: colors.surfaceRaised }]}><View style={[styles.statusDot, { backgroundColor: isAuthenticated ? colors.primary : colors.textMuted }]} /><Text style={[styles.statusText, { color: isAuthenticated ? colors.primary : colors.textMuted }]}>{isAuthenticated ? 'Signed in' : authConfigured ? 'Configured' : 'Not connected'}</Text></View>}
             />
             <SettingRow
               icon="database"
               title="Conversation storage"
-              description="Messages exist in memory only and clear when the app restarts."
+              description={isAuthenticated ? 'Signed-in conversations are saved to Supabase.' : 'Guest chat is temporary; sign in to save conversation history.'}
               colors={colors}
               action={<SvgIcon name="info" size={16} color={colors.textMuted} />}
             />
@@ -99,9 +105,9 @@ export default function SettingsScreen() {
           <View style={[styles.infoCard, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.infoTitle, { color: colors.text }]}>Privacy comes first</Text>
-              <Text style={[styles.infoDescription, { color: colors.textMuted }]}>This frontend preview makes no AI, authentication, or storage requests.</Text>
+              <Text style={[styles.infoDescription, { color: colors.textMuted }]}>Chat requests go to your configured backend. Only signed-in conversations are saved; frontend code uses the public Supabase key.</Text>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => setInfo('Messages and profile details stay in the current app session. No AI provider or sign-in service is contacted. Connect a backend before using real personal data.')} style={[styles.infoButton, { borderColor: colors.border }]}>
+            <Pressable accessibilityRole="button" onPress={() => setInfo('The app sends chat text to your configured backend. Signed-in conversations are associated with your verified Supabase user. Guest conversations are not saved. Attachments and voice capture are not sent.')} style={[styles.infoButton, { borderColor: colors.border }]}>
               <Text style={[styles.infoButtonText, { color: colors.primary }]}>Learn more</Text>
               <SvgIcon name="arrow-up-right" size={13} color={colors.primary} />
             </Pressable>

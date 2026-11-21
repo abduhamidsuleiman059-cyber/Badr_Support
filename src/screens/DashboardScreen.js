@@ -11,6 +11,7 @@ import SuggestionCard from '../components/SuggestionCard';
 import AIAvatar from '../components/AIAvatar';
 import useTheme from '../hooks/useTheme';
 import useChat from '../hooks/useChat';
+import { isBackendConfigured } from '../services/apiClient';
 
 const prompts = [
   { icon: 'edit-3', title: 'Write something', description: 'Turn a rough thought into clear, confident writing.', prompt: 'Help me turn a rough thought into clear, confident writing.', color: '#55D8A5' },
@@ -23,6 +24,7 @@ export default function DashboardScreen() {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const { startChat, openThread, threads } = useChat();
+  const backendConfigured = isBackendConfigured();
   const columns = width >= 980 ? 4 : width >= 650 ? 2 : 1;
   const gap = 12;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -38,8 +40,11 @@ export default function DashboardScreen() {
   }, [pulse, useNativeDriver]);
 
   function openPrompt(prompt) {
-    startChat(prompt);
-    router.push('/chat');
+    startChat();
+    router.push({
+      pathname: '/chat',
+      params: { prompt, promptKey: String(Date.now()) },
+    });
   }
 
   return (
@@ -70,7 +75,9 @@ export default function DashboardScreen() {
               <Text style={[styles.heroTitle, width < 600 && styles.heroTitleNarrow]}>A little more clarity.<Text style={{ color: '#64F0B6' }}>{'\n'}A lot more possibility.</Text></Text>
               <Text style={styles.heroDescription}>Bring a question, a half-formed idea, or a task on your mind. Start anywhere.</Text>
               <AppButton title="Start a conversation" icon="arrow-up-right" onPress={() => { startChat(); router.push('/chat'); }} style={styles.heroButton} />
-              <Text style={styles.connectionNote}>Frontend preview · AI service not connected</Text>
+              <Text style={styles.connectionNote}>
+                {backendConfigured ? 'Chat is connected to the configured backend.' : 'Set EXPO_PUBLIC_BACKEND_API_URL to connect chat.'}
+              </Text>
             </View>
             {width >= 700 ? <View style={styles.orbitWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <View style={[styles.orbit, styles.orbitOuter]} />
@@ -123,7 +130,7 @@ export default function DashboardScreen() {
             <View style={[styles.noteCard, { backgroundColor: colors.surfaceRaised, borderColor: colors.border }]}>
               <View style={[styles.noteIcon, { backgroundColor: colors.primaryDim }]}><SvgIcon name="shield" size={17} color={colors.primary} /></View>
               <Text style={[styles.noteTitle, { color: colors.text }]}>Thoughtful by design</Text>
-              <Text style={[styles.noteBody, { color: colors.textSecondary }]}>This frontend preview doesn't send your messages to an AI service. Connect your own backend to enable responses.</Text>
+              <Text style={[styles.noteBody, { color: colors.textSecondary }]}>Signed-in conversations are saved to your account. Guest conversations are temporary.</Text>
               <Pressable accessibilityRole="link" onPress={() => router.push('/settings')} style={styles.learnLink}>
                 <Text style={[styles.linkLabel, { color: colors.primary }]}>Explore settings</Text>
                 <SvgIcon name="arrow-right" size={13} color={colors.primary} />

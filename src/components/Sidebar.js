@@ -17,7 +17,12 @@ const items = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { colors } = useTheme();
-  const { threads, openThread, startChat } = useChat();
+  const { threads, openThread, startChat, authenticatedUser } = useChat();
+  const profileName = authenticatedUser?.user_metadata?.full_name?.trim()
+    || authenticatedUser?.user_metadata?.name?.trim()
+    || authenticatedUser?.email?.split('@')[0]?.trim()
+    || '';
+  const avatarInitial = (profileName || 'Guest').slice(0, 1).toUpperCase();
 
   return (
     <View style={[styles.sidebar, { backgroundColor: colors.background, borderRightColor: colors.borderSubtle }]}>
@@ -73,7 +78,7 @@ export default function Sidebar() {
         style={({ pressed }) => [styles.profileCard, { borderTopColor: colors.borderSubtle, opacity: pressed ? 0.7 : 1 }]}
       >
         <View style={[styles.profileAvatar, { backgroundColor: colors.primaryDim }]}>
-          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>G</Text>
+          <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '800' }}>{avatarInitial}</Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.profileName, { color: colors.text }]}>Guest</Text>
