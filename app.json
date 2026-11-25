@@ -21,7 +21,12 @@
     "web": {
       "bundler": "metro",
       "name": "BADR_SUPPORT",
-      "shortName": "BADR"
+      "shortName": "BADR",
+      "display": "standalone",
+      "startUrl": "/",
+      "scope": "/",
+      "themeColor": "#080C10",
+      "backgroundColor": "#080C10"
     },
     "android": {
       "package": "com.badrsupport.app"
